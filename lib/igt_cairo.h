@@ -39,6 +39,8 @@ typedef struct _cairo cairo_t;
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "igt_framebuffer.h"
+
 /**
  * igt_text_align:
  * @align_left: align left
@@ -74,5 +76,7 @@ void igt_paint_image(cairo_t *cr, const char *filename, int dst_x, int dst_y,
 int igt_cairo_printf_line(cairo_t *cr, enum igt_text_align align,
 			  double yspacing, const char *fmt, ...)
 			       __attribute__((format (printf, 4, 5)));
+
+cairo_t *igt_cairo_from_framebuffer(igt_framebuffer_t *fb);
 
 #endif /* __IGT_CAIRO_H__ */

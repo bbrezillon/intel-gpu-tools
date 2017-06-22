@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016 Broadcom
+ * Copyright © 2017 Broadcom
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,21 +19,20 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
+ *
+ * Author:
+ *	Boris Brezillon <boris.brezillon@free-electrons.com>
  */
 
-#ifndef IGT_VC4_H
-#define IGT_VC4_H
+#ifndef __IGT_DEV_H__
+#define __IGT_DEV_H__
 
-#include "igt_bo.h"
-#include "igt_framebuffer.h"
+#include <stdint.h>
 
-uint32_t igt_vc4_get_cleared_bo(int fd, size_t size, uint32_t clearval);
-int igt_vc4_create_bo(int fd, size_t size);
-void *igt_vc4_mmap_bo(int fd, uint32_t handle, uint32_t size, unsigned prot);
+typedef struct igt_dev {
+	int fd;
+} igt_dev_t;
 
-igt_bo_t *igt_vc4_new_bo(igt_dev_t *dev, size_t size);
-igt_framebuffer_t *igt_vc4_new_framebuffer(igt_dev_t *dev, int width,
-					   int height, uint32_t format,
-					   uint64_t modifier);
+igt_dev_t *igt_dev_from_fd(int fd);
 
-#endif /* IGT_VC4_H */
+#endif /* __IGT_DEV_H__ */

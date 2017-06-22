@@ -128,3 +128,62 @@ igt_vc4_mmap_bo(int fd, uint32_t handle, uint32_t size, unsigned prot)
 	else
 		return ptr;
 }
+
+static void vc4_bo_destroy(igt_bo_t *bo)
+{
+	struct drm_gem_close close = { .handle = bo->handle };
+
+	do_ioctl(bo->dev->fd, DRM_IOCTL_GEM_CLOSE, &close);
+}
+
+static void *vc4_bo_map(igt_bo_t *bo, bool linear)
+{
+	void *ptr;
+
+	ptr = igt_vc4_mmap_bo(bo->dev->fd, bo->handle, bo->size,
+			      PROT_READ | PROT_WRITE);
+	igt_assert(ptr);
+
+	return ptr;
+}
+
+static int vc4_bo_unmap(igt_bo_t *bo)
+{
+	munmap(bo->map, bo->size);
+	return 0;
+}
+
+static const igt_bo_ops_t vc4_bo_ops = {
+	.map = vc4_bo_map,
+	.unmap = vc4_bo_unmap,
+	.destroy = vc4_bo_destroy,
+};
+
+igt_bo_t *igt_vc4_new_bo(igt_dev_t *dev, size_t size)
+{
+	return igt_bo_create(dev, &vc4_bo_ops,
+			     igt_vc4_create_bo(dev->fd, size), size);
+}
+
+igt_framebuffer_t *igt_vc4_new_framebuffer(igt_dev_t *dev, int width,
+					   int height, uint32_t format,
+					   uint64_t modifier)
+{
+	const igt_fb_format_info_t *finfo = igt_get_fb_format_info(format);
+	igt_fb_plane_t fbplanes[IGT_MAX_FB_PLANES] = { };
+	int i;
+
+	if (!finfo || modifier != LOCAL_DRM_FORMAT_MOD_NONE)
+		return NULL;
+
+	for (i = 0; i < finfo->nplanes; i++) {
+		size_t size;
+
+		fbplanes[i].pitch = finfo->cpp[i] * width;
+		size = fbplanes[i].pitch * height;
+		fbplanes[i].bo = igt_vc4_new_bo(dev, size);
+	}
+
+	return igt_framebuffer_create(dev, width, height, format, modifier,
+				      fbplanes);
+}

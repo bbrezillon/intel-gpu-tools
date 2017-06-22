@@ -26,6 +26,7 @@
  */
 
 #define _GNU_SOURCE
+#include <drm_fourcc.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -335,4 +336,54 @@ void igt_paint_image(cairo_t *cr, const char *filename,
 	cairo_restore(cr);
 
 	fclose(f);
+}
+
+static void cairo_surface_unref_framebuffer(void *data)
+{
+	igt_framebuffer_t *fb = data;
+
+	igt_framebuffer_unmap(fb);
+	igt_framebuffer_unref(fb);
+}
+
+cairo_t *igt_cairo_from_framebuffer(igt_framebuffer_t *fb)
+{
+	cairo_surface_t *surface;
+	cairo_format_t cformat;
+	cairo_t *cairo;
+	void *ptr;
+
+	switch (fb->format) {
+	case DRM_FORMAT_RGB565:
+		cformat = CAIRO_FORMAT_RGB16_565;
+		break;
+	case DRM_FORMAT_XRGB8888:
+		cformat = CAIRO_FORMAT_RGB24;
+		break;
+	case DRM_FORMAT_XRGB2101010:
+		cformat = CAIRO_FORMAT_RGB30;
+		break;
+	case DRM_FORMAT_ARGB8888:
+		cformat = CAIRO_FORMAT_ARGB32;
+		break;
+	default:
+		return NULL;
+	}
+
+	fb = igt_framebuffer_ref(fb);
+	if (!fb)
+		return NULL;
+
+	igt_assert(!igt_framebuffer_map(fb, true));
+
+	ptr = igt_framebuffer_get_ptr(fb, 0);
+	surface = cairo_image_surface_create_for_data(ptr, cformat,
+						      fb->width, fb->height,
+						      fb->planes[0].pitch);
+	cairo_surface_set_user_data(surface, NULL, fb,
+				    cairo_surface_unref_framebuffer);
+	cairo = cairo_create(surface);
+	cairo_surface_destroy(surface);
+
+	return cairo;
 }
