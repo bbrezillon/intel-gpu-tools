@@ -224,6 +224,7 @@ struct local_drm_mode_fb_cmd2 {
 #define LOCAL_DRM_MODE_FB_MODIFIERS	(1<<1)
 
 #define LOCAL_DRM_FORMAT_MOD_VENDOR_INTEL	0x01
+#define LOCAL_DRM_FORMAT_MOD_VENDOR_BROADCOM	0x07
 
 #define local_fourcc_mod_code(vendor, val) \
 		((((uint64_t)LOCAL_DRM_FORMAT_MOD_VENDOR_## vendor) << 56) | \
@@ -235,6 +236,8 @@ struct local_drm_mode_fb_cmd2 {
 #define LOCAL_I915_FORMAT_MOD_Yf_TILED	local_fourcc_mod_code(INTEL, 3)
 #define LOCAL_I915_FORMAT_MOD_Y_TILED_CCS	local_fourcc_mod_code(INTEL, 4)
 #define LOCAL_I915_FORMAT_MOD_Yf_TILED_CCS	local_fourcc_mod_code(INTEL, 5)
+
+#define LOCAL_BROADCOM_FORMAT_MOD_VC4_T_TILED	local_fourcc_mod_code(BROADCOM, 1)
 
 #define LOCAL_DRM_IOCTL_MODE_ADDFB2	DRM_IOWR(0xB8, \
 						 struct local_drm_mode_fb_cmd2)
