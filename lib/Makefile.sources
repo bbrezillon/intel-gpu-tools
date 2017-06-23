@@ -24,6 +24,8 @@ lib_source_list =	 	\
 	igt_gt.h		\
 	igt_gvt.c		\
 	igt_gvt.h		\
+	igt_i915.c		\
+	igt_i915.h		\
 	igt_primes.c		\
 	igt_primes.h		\
 	igt_rand.c		\

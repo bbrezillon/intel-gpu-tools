@@ -27,92 +27,26 @@
  *	Boris Brezillon <boris.brezillon@free-electrons.com>
  */
 
+#include "drmtest.h"
+#include "igt_fb.h"
 #include "igt_i915.h"
+#include "ioctl_wrappers.h"
 
-typedef struct igt_i915_bo {
-	uint64_t mod;
-	uint32_t pitch;
-	int width;
-	int height;
-	struct {
-		igt_bo_t *bo;
-		uint32_t pitch;
-	} linear;
-} igt_i915_bo_t;
-
-
-static void *i915_bo_map(igt_bo_t *bo, bool linear)
+static void *i915_bo_map(igt_bo_t *bo, int prot, int flags)
 {
-	igt_i915_bo_t *i915bo = bo->priv;
-	unsigned int tiling;
-
-	if (!linear) {
-		gem_set_domain(bo->dev->fd, bo->handle,
-			       I915_GEM_DOMAIN_CPU, I915_GEM_DOMAIN_CPU);
-		return gem_mmap__gtt(bo->dev->fd, bo->handle, bo->size,
-				     PROT_READ | PROT_WRITE);
-	}
-
-	tiling = igt_fb_mod_to_tiling(i915bo->mod);
-
-	/* Copy non-linear BO content to linear BO */
-	gem_set_domain(bo->dev->fd, i915bo->linear.bo->handle,
-		       I915_GEM_DOMAIN_GTT, 0);
-
-	igt_blitter_fast_copy__raw(bo->dev->fd, bo->handle, i915bo->pitch,
-				   tiling, 0, 0, /* src_x, src_y */
-				   i915bo->width, i915bo->height,
-				   i915bo->linear.bo->handle,
-				   i915bo->linear.pitch,
-				   I915_TILING_NONE, 0, 0 /* dst_x, dst_y */);
-
-	gem_sync(bo->dev->fd, i915bo->linear.bo->handle);
-
-	gem_set_domain(bo->dev->fd, i915bo->linear.bo->handle, I915_GEM_DOMAIN_CPU,
+	gem_set_domain(bo->dev->fd, bo->handle, I915_GEM_DOMAIN_CPU,
 		       I915_GEM_DOMAIN_CPU);
-
-	return gem_mmap__cpu(bo->dev->fd, i915bo->linear.bo->handle, 0,
-			     i915bo->linear.bo->size, PROT_READ | PROT_WRITE);
+	return gem_mmap__gtt(bo->dev->fd, bo->handle, bo->size, prot);
 }
 
-static int i915_bo_unmap(igt_bo_t *bo)
+static int i915_bo_unmap(igt_bo_t *bo, void *ptr)
 {
-	igt_i915_bo_t *i915bo = bo->priv;
-	unsigned int tiling;
-
-	if (!bo->linearmap)
-		return gem_munmap(bo->map, bo->size);
-
-	gem_munmap(bo->map, i915bo->linear.bo->size);
-
-	gem_set_domain(bo->dev->fd, i915bo->linear.bo->handle,
-		       I915_GEM_DOMAIN_GTT, 0);
-
-	tiling = igt_fb_mod_to_tiling(i915bo->mod);
-	igt_blitter_fast_copy__raw(bo->dev->fd,
-				   i915bo->linear.bo->handle,
-				   i915bo->linear.pitch,
-				   I915_TILING_NONE,
-				   0, 0, /* src_x, src_y */
-				   i915bo->width, i915bo->height,
-				   bo->handle, i915bo->pitch,
-				   tiling,
-				   0, 0 /* dst_x, dst_y */);
-
-	gem_sync(bo->dev->fd, i915bo->linear.bo->handle);
-
-	return 0;
+	return gem_munmap(ptr, bo->size);
 }
 
 static void i915_bo_destroy(igt_bo_t *bo)
 {
-	igt_i915_bo_t *i915bo = bo->priv;
-
 	gem_close(bo->dev->fd, bo->handle);
-	if (i915bo->mod != LOCAL_DRM_FORMAT_MOD_NONE)
-		igt_bo_unref(i915bo->linear.bo);
-
-	free(i915bo);
 }
 
 static const igt_bo_ops_t i915_bo_ops = {
@@ -121,59 +55,130 @@ static const igt_bo_ops_t i915_bo_ops = {
 	.destroy = i915_bo_destroy,
 };
 
-igt_bo_t *igt_i915_new_bo(igt_dev_t *dev, int width, int height,
-			  uint32_t format, uint64_t mod,
-			  uint32_t *pitch)
+igt_bo_t *igt_i915_new_bo(igt_dev_t *dev, size_t size)
 {
-	const igt_fb_format_info_t *finfo = igt_get_fb_format_info(format);
 	struct drm_i915_gem_create create = { };
-	unsigned size, stride;
-	igt_i915_bo_t *i915bo;
 	igt_bo_t *bo;
-	uint32_t *ptr;
-
-	igt_calc_fb_size(dev->fd, width, height, finfo->cpp[0] * 8, mod,
-			 &size, &stride);
-
-	if (pitch)
-		*pitch = stride;
-
-	i915bo = calloc(sizeof(*i915bo), 1);
-	if (!i915bo)
-		return NULL;
-
-	i915bo->pitch = stride;
-	i915bo->height = height;
-	i915bo->width = width;
-	i915bo->mod = mod;
-
-	if (i915bo->mod != LOCAL_DRM_FORMAT_MOD_NONE)
-		i915bo->linear.bo = igt_dumb_new_bo(dev, width, height, format,
-						    0, &i915bo->linear.pitch);
 
 	create.size = size;
 	do_ioctl(dev->fd, DRM_IOCTL_I915_GEM_CREATE, &create);
 	igt_assert(create.handle);
 
-	gem_set_tiling(dev->fd, create.handle, igt_fb_mod_to_tiling(mod),
-		       stride);
-
-	/* Ensure the framebuffer is preallocated */
-	ptr = gem_mmap__gtt(dev->fd, create.handle, size, PROT_READ);
-	igt_assert(*ptr == 0);
-	gem_munmap(ptr, size);
-
 	bo = igt_bo_create(dev, &i915_bo_ops, create.handle, size);
 	if (!bo) {
 		gem_close(dev->fd, create.handle);
-		free(i915bo);
 		return NULL;
 	}
 
-	bo->priv = i915bo;
-
 	return bo;
 }
+
+typedef struct igt_i915_fb {
+	igt_fb_plane_t linearplane;
+} igt_i915_fb_t;
+
+static int i915_fb_map(igt_framebuffer_t *fb, bool linear)
+{
+	const igt_fb_format_info_t *finfo = igt_get_fb_format_info(fb->format);
+	igt_i915_fb_t *i915fb = fb->priv;
+	unsigned int tiling;
+	int i;
+
+	/* Copy non-linear BO content to linear BO */
+	gem_set_domain(fb->dev->fd, i915fb->linearplane.bo->handle,
+		       I915_GEM_DOMAIN_GTT, 0);
+
+	if (!linear || fb->modifier == LOCAL_DRM_FORMAT_MOD_NONE) {
+		for (i = 0; i < finfo->nplanes; i++) {
+			uint8_t *ptr;
+
+			ptr = igt_bo_map(fb->planes[i].bo,
+					 PROT_READ | PROT_WRITE, MAP_SHARED);
+			fb->planeptrs[i] = ptr + fb->planes[i].offset;
+		}
+
+		return 0;
+	}
+
+	i915fb->linearplane.bo = igt_dumb_new_bo(fb->dev, fb->width,
+						 fb->height, fb->format,
+						 LOCAL_DRM_FORMAT_MOD_NONE,
+						 &i915fb->linearplane.pitch);
+	i915fb->linearplane.offset = 0;
+
+	tiling = igt_fb_mod_to_tiling(fb->modifier);
+
+	/* Copy non-linear BO content to linear BO */
+	gem_set_domain(fb->dev->fd, i915fb->linearplane.bo->handle,
+		       I915_GEM_DOMAIN_GTT, 0);
+
+	igt_blitter_fast_copy__raw(fb->dev->fd, fb->planes[0].bo->handle,
+				   fb->planes[0].pitch,
+				   tiling, 0, 0, /* src_x, src_y */
+				   fb->width, fb->height,
+				   i915fb->linearplane.bo->handle,
+				   i915fb->linearplane.pitch,
+				   I915_TILING_NONE, 0, 0 /* dst_x, dst_y */);
+
+	gem_sync(fb->dev->fd, i915fb->linearplane.bo->handle);
+
+	gem_set_domain(fb->dev->fd, i915fb->linearplane.bo->handle,
+		       I915_GEM_DOMAIN_CPU, I915_GEM_DOMAIN_CPU);
+
+	fb->planeptrs[i] = gem_mmap__cpu(fb->dev->fd,
+					 i915fb->linearplane.bo->handle, 0,
+					 i915fb->linearplane.bo->size,
+					 PROT_READ | PROT_WRITE);
+
+	return 0;
+}
+
+static int i915_fb_unmap(igt_framebuffer_t *fb)
+{
+	igt_i915_fb_t *i915fb = fb->priv;
+	unsigned int tiling;
+	uint8_t *ptr;
+	int i;
+
+	if (!i915fb->linearplane.bo) {
+		for (i = 0; i < ARRAY_SIZE(fb->planes); i++) {
+			ptr = fb->planeptrs[i];
+			if (!ptr)
+				break;
+
+			igt_bo_unmap(fb->planes[i].bo,
+				     ptr - fb->planes[i].offset);
+			fb->planeptrs[i] = NULL;
+		}
+
+		return 0;
+	}
+
+	ptr = fb->planeptrs[0];
+	gem_munmap(ptr - fb->planes[0].offset, i915fb->linearplane.bo->handle);
+
+	gem_set_domain(fb->dev->fd, i915fb->linearplane.bo->handle,
+		       I915_GEM_DOMAIN_GTT, 0);
+
+	tiling = igt_fb_mod_to_tiling(fb->modifier);
+	igt_blitter_fast_copy__raw(fb->dev->fd, i915fb->linearplane.bo->handle,
+				   i915fb->linearplane.pitch, I915_TILING_NONE,
+				   0, 0, /* src_x, src_y */
+				   fb->width, fb->height,
+				   fb->planes[0].bo->handle, fb->planes[0].pitch,
+				   tiling, 0, 0 /* dst_x, dst_y */);
+
+	gem_sync(fb->dev->fd, i915fb->linearplane.bo->handle);
+	igt_bo_unref(i915fb->linearplane.bo);
+	memset(&i915fb->linearplane, 0, sizeof(i915fb->linearplane));
+
+	return 0;
+}
+
+static const igt_framebuffer_ops_t i915_fb_ops = {
+	.map = i915_fb_map,
+	.unmap = i915_fb_unmap,
+};
 
 igt_framebuffer_t *igt_i915_new_framebuffer(igt_dev_t *dev, int width,
 					    int height, uint32_t format,
@@ -181,13 +186,36 @@ igt_framebuffer_t *igt_i915_new_framebuffer(igt_dev_t *dev, int width,
 {
 	const igt_fb_format_info_t *finfo = igt_get_fb_format_info(format);
 	igt_fb_plane_t fbplanes[IGT_MAX_FB_PLANES] = { };
+	unsigned int size, stride;
+	igt_framebuffer_t *fb;
+	igt_i915_fb_t *i915fb;
+	uint32_t *ptr;
 
 	if (finfo->nplanes > 1)
 		return NULL;
 
-	fbplanes[0].bo = igt_i915_new_bo(dev, width, height, format,
-					 modifier, &fbplanes[0].pitch);
+	i915fb = calloc(1, sizeof(*i915fb));
+	if (!i915fb)
+		return NULL;
 
-	return igt_framebuffer_create(dev, width, height, format, modifier,
-				      fbplanes);
+	igt_calc_fb_size(dev->fd, width, height, finfo->cpp[0] * 8, modifier,
+			 &size, &stride);
+
+	fbplanes[0].bo = igt_i915_new_bo(dev, size);
+	fbplanes[0].offset = 0;
+	fbplanes[0].pitch = stride;
+
+	gem_set_tiling(dev->fd, fbplanes[0].bo->handle,
+		       igt_fb_mod_to_tiling(modifier), stride);
+
+	/* Ensure the framebuffer is preallocated */
+	ptr = gem_mmap__gtt(dev->fd, fbplanes[0].bo->handle, size, PROT_READ);
+	igt_assert(*ptr == 0);
+	gem_munmap(ptr, size);
+
+	fb = igt_framebuffer_create(dev, width, height, format, modifier,
+				    fbplanes, &i915_fb_ops);
+	fb->priv = i915fb;
+
+	return fb;
 }

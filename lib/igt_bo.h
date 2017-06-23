@@ -34,8 +34,8 @@
 typedef struct igt_bo igt_bo_t;
 
 typedef struct igt_bo_ops {
-	void *(*map)(igt_bo_t *bo, bool linear);
-	int (*unmap)(igt_bo_t *bo);
+	void *(*map)(igt_bo_t *bo, int prot, int flags);
+	int (*unmap)(igt_bo_t *bo, void *ptr);
 	void (*destroy)(igt_bo_t *bo);
 } igt_bo_ops_t;
 
@@ -43,9 +43,6 @@ struct igt_bo {
 	igt_dev_t *dev;
 	size_t size;
 	unsigned handle;
-	void *map;
-	bool linearmap;
-	int mapcnt;
 	int refcnt;
 	const igt_bo_ops_t *ops;
 	void *priv;
@@ -55,8 +52,8 @@ igt_bo_t *igt_bo_create(igt_dev_t *dev, const igt_bo_ops_t *ops,
 			uint32_t handle, size_t size);
 igt_bo_t *igt_bo_ref(igt_bo_t *bo);
 void igt_bo_unref(igt_bo_t *bo);
-void *igt_bo_map(igt_bo_t *bo, bool linear);
-int igt_bo_unmap(igt_bo_t *bo);
+void *igt_bo_map(igt_bo_t *bo, int prot, int flags);
+int igt_bo_unmap(igt_bo_t *bo, void *ptr);
 
 igt_bo_t *igt_dumb_new_bo(igt_dev_t *dev, int width, int height,
 			  uint32_t format, int plane, uint32_t *pitch);

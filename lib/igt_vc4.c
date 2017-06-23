@@ -136,20 +136,19 @@ static void vc4_bo_destroy(igt_bo_t *bo)
 	do_ioctl(bo->dev->fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
 
-static void *vc4_bo_map(igt_bo_t *bo, bool linear)
+static void *vc4_bo_map(igt_bo_t *bo, int prot, int flags)
 {
 	void *ptr;
 
-	ptr = igt_vc4_mmap_bo(bo->dev->fd, bo->handle, bo->size,
-			      PROT_READ | PROT_WRITE);
+	ptr = igt_vc4_mmap_bo(bo->dev->fd, bo->handle, bo->size, prot);
 	igt_assert(ptr);
 
 	return ptr;
 }
 
-static int vc4_bo_unmap(igt_bo_t *bo)
+static int vc4_bo_unmap(igt_bo_t *bo, void *ptr)
 {
-	munmap(bo->map, bo->size);
+	munmap(ptr, bo->size);
 	return 0;
 }
 
@@ -164,6 +163,49 @@ igt_bo_t *igt_vc4_new_bo(igt_dev_t *dev, size_t size)
 	return igt_bo_create(dev, &vc4_bo_ops,
 			     igt_vc4_create_bo(dev->fd, size), size);
 }
+
+static int vc4_fb_map(igt_framebuffer_t *fb, bool linear)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(fb->planes) && fb->planes[i].bo; i++) {
+		uint8_t *ptr;
+
+		 ptr = igt_bo_map(fb->planes[i].bo, PROT_READ | PROT_WRITE,
+				  MAP_SHARED);
+		if (!ptr)
+			goto err_unmap;
+
+		fb->planeptrs[i] = ptr + fb->planes[i].offset;
+	}
+
+	return 0;
+
+err_unmap:
+	for (i--; i >= 0; i--) {
+		igt_bo_unmap(fb->planes[i].bo, fb->planeptrs[i]);
+		fb->planeptrs[i] = NULL;
+	}
+
+	return -EINVAL;
+}
+
+static int vc4_fb_unmap(igt_framebuffer_t *fb)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(fb->planes) && fb->planes[i].bo; i++) {
+		igt_bo_unmap(fb->planes[i].bo, fb->planeptrs[i]);
+		fb->planeptrs[i] = NULL;
+	}
+
+	return 0;
+}
+
+static const igt_framebuffer_ops_t vc4_fb_ops = {
+	.map = vc4_fb_map,
+	.unmap = vc4_fb_unmap,
+};
 
 igt_framebuffer_t *igt_vc4_new_framebuffer(igt_dev_t *dev, int width,
 					   int height, uint32_t format,
@@ -185,5 +227,5 @@ igt_framebuffer_t *igt_vc4_new_framebuffer(igt_dev_t *dev, int width,
 	}
 
 	return igt_framebuffer_create(dev, width, height, format, modifier,
-				      fbplanes);
+				      fbplanes, &vc4_fb_ops);
 }

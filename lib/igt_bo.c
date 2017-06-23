@@ -65,39 +65,14 @@ void igt_bo_unref(igt_bo_t *bo)
 	free(bo);
 }
 
-void *igt_bo_map(igt_bo_t *bo, bool linear)
+void *igt_bo_map(igt_bo_t *bo, int prot, int flags)
 {
-	if (bo->map) {
-		if (linear != bo->linearmap)
-			return NULL;
-
-		bo->mapcnt++;
-		return bo->map;
-	}
-
-	bo->map =  bo->ops->map(bo, linear);
-	if (bo->map) {
-		bo->mapcnt = 1;
-		bo->linearmap = linear;
-	}
-
-	return bo->map;
+	return bo->ops->map(bo, prot, flags);
 }
 
-int igt_bo_unmap(igt_bo_t *bo)
+int igt_bo_unmap(igt_bo_t *bo, void *ptr)
 {
-	int ret;
-
-	if (bo->mapcnt > 1)
-		return --(bo->mapcnt);
-
-	ret = bo->ops->unmap(bo);
-	if (!ret) {
-		bo->mapcnt = 0;
-		bo->map = NULL;
-	}
-
-	return ret;
+	return bo->ops->unmap(bo, ptr);
 }
 
 static void dumb_bo_destroy(igt_bo_t *bo)
@@ -107,22 +82,22 @@ static void dumb_bo_destroy(igt_bo_t *bo)
 	do_ioctl(bo->dev->fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
 
-static void *dumb_bo_map(igt_bo_t *bo, bool linear)
+static void *dumb_bo_map(igt_bo_t *bo, int prot, int flags)
 {
 	struct drm_mode_map_dumb arg = { .handle = bo->handle };
 	void *ptr;
 
 	do_ioctl(bo->dev->fd, DRM_IOCTL_MODE_MAP_DUMB, &arg);
-	ptr = mmap(NULL, bo->size, PROT_READ | PROT_WRITE, MAP_SHARED,
+	ptr = mmap(NULL, bo->size, prot, flags,
 		   bo->dev->fd, arg.offset);
 	igt_assert(ptr != MAP_FAILED);
 
 	return ptr;
 }
 
-static int dumb_bo_unmap(igt_bo_t *bo)
+static int dumb_bo_unmap(igt_bo_t *bo, void *ptr)
 {
-	munmap(bo->map, bo->size);
+	munmap(ptr, bo->size);
 	return 0;
 }
 

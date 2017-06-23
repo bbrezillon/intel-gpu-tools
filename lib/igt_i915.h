@@ -30,8 +30,10 @@
 #ifndef __IGT_I915_H__
 #define __IGT_I915_H__
 
-igt_bo_t *igt_i915_new_bo(igt_dev_t *dev, int width, int height,
-			  uint32_t format, uint64_t mod, uint32_t *pitch);
+#include "igt_bo.h"
+#include "igt_framebuffer.h"
+
+igt_bo_t *igt_i915_new_bo(igt_dev_t *dev, size_t size);
 
 igt_framebuffer_t *igt_i915_new_framebuffer(igt_dev_t *dev, int width,
 					    int height, uint32_t format,

@@ -52,7 +52,8 @@ const igt_fb_format_info_t *igt_get_fb_format_info(uint32_t format)
 igt_framebuffer_t *igt_framebuffer_create(igt_dev_t *dev, int width,
 					 int height, uint32_t format,
 					 uint64_t modifier,
-					 const igt_fb_plane_t *planes)
+					 const igt_fb_plane_t *planes,
+					 const igt_framebuffer_ops_t *ops)
 {
 	struct drm_mode_fb_cmd2 addfb = { };
 	const igt_fb_format_info_t *finfo = igt_get_fb_format_info(format);
@@ -78,6 +79,7 @@ igt_framebuffer_t *igt_framebuffer_create(igt_dev_t *dev, int width,
 	fb->format = format;
 	fb->modifier = modifier;
 	fb->refcnt = 1;
+	fb->ops = ops;
 
 	for (i = 0; i < finfo->nplanes; i++) {
 		fb->planes[i] = planes[i];
@@ -120,44 +122,65 @@ void igt_framebuffer_unref(igt_framebuffer_t *fb)
 
 int igt_framebuffer_map(igt_framebuffer_t *fb, bool linear)
 {
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(fb->planes) && fb->planes[i].bo; i++) {
-		if (!igt_bo_map(fb->planes[i].bo, linear))
-			goto err_unmap;
-	}
-
-	return 0;
-
-err_unmap:
-	for (i--; i >= 0; i--)
-		igt_bo_unmap(fb->planes[i].bo);
-
-	return -EINVAL;
+	return fb->ops->map(fb, linear);
 }
 
 void *igt_framebuffer_get_ptr(igt_framebuffer_t *fb, int plane)
 {
 
-	if (plane > ARRAY_SIZE(fb->planes) || !fb->planes[plane].bo ||
-	    !fb->planes[plane].bo->map)
+	if (plane > ARRAY_SIZE(fb->planeptrs))
 		return NULL;
 
-	return (uint8_t *)fb->planes[plane].bo->map + fb->planes[plane].offset;
+	return fb->planeptrs[plane];
 }
 
 int igt_framebuffer_unmap(igt_framebuffer_t *fb)
 {
-	int ret, i;
+	return fb->ops->unmap(fb);
+}
 
-	for (i = 0; i < ARRAY_SIZE(fb->planes) && fb->planes[i].bo; i--) {
-		ret = igt_bo_unmap(fb->planes[i].bo);
-		if (ret)
-			return ret;
+static int dumb_fb_map(igt_framebuffer_t *fb, bool linear)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(fb->planes) && fb->planes[i].bo; i++) {
+		uint8_t *ptr;
+
+		 ptr = igt_bo_map(fb->planes[i].bo, PROT_READ | PROT_WRITE,
+				  MAP_SHARED);
+		if (!ptr)
+			goto err_unmap;
+
+		fb->planeptrs[i] = ptr + fb->planes[i].offset;
+	}
+
+	return 0;
+
+err_unmap:
+	for (i--; i >= 0; i--) {
+		igt_bo_unmap(fb->planes[i].bo, fb->planeptrs[i]);
+		fb->planeptrs[i] = NULL;
+	}
+
+	return -EINVAL;
+}
+
+static int dumb_fb_unmap(igt_framebuffer_t *fb)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(fb->planes) && fb->planes[i].bo; i++) {
+		igt_bo_unmap(fb->planes[i].bo, fb->planeptrs[i]);
+		fb->planeptrs[i] = NULL;
 	}
 
 	return 0;
 }
+
+static const igt_framebuffer_ops_t dumb_fb_ops = {
+	.map = dumb_fb_map,
+	.unmap = dumb_fb_unmap,
+};
 
 igt_framebuffer_t *igt_dumb_new_framebuffer(igt_dev_t *dev, int width,
 					    int height, uint32_t format,
@@ -175,5 +198,5 @@ igt_framebuffer_t *igt_dumb_new_framebuffer(igt_dev_t *dev, int width,
 						 &fbplanes[i].pitch);
 
 	return igt_framebuffer_create(dev, width, height, format, modifier,
-				      fbplanes);
+				      fbplanes, &dumb_fb_ops);
 }
